@@ -130,7 +130,7 @@ func main() {
 		pixels[i+3] = 255
 	}
 
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * 1000)
 	go func() {
 		for {
 			<-ticker.C
