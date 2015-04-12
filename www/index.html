@@ -11,6 +11,9 @@
 			sock.binaryType='arraybuffer';
 			
 			sock.onmessage = function(event) {
+				var tempcvs = document.createElement("canvas");
+				tempcvs.width=800; tempcvs.height=600;
+				tempctx = tempcvs.getContext("2d");
 				console.log("received " + event.data.byteLength + " bytes");
 				//console.log(event.data);
 				var outdata = pako.inflate(event.data);
@@ -20,10 +23,15 @@
 				//px = event.data;
 				var img = ctx.createImageData(800,600);
 				//img.data = px;
-				for(var i = 0; i < img.data.length; i++) {
+				for(var i = 0; i < img.data.length; i+=1) {
+					//if(px[i+3] == 0) { continue; }
 					img.data[i] = px[i];
+					//img.data[i+1] = px[i+1];
+					//img.data[i+2] = px[i+2];
+					//img.data[i+3] = px[i+3];
 				}
-				ctx.putImageData(img, 0, 0);
+				tempctx.putImageData(img, 0,0);
+				ctx.drawImage(tempcvs, 0, 0);
 			}
 
 		})

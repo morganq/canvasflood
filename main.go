@@ -19,6 +19,7 @@ var height int = 600
 
 var stride = 4
 var pixels = make([]uint8, width*height*stride)
+var delta_pixels = make([]uint8, width*height*stride)
 
 var packets int64 = 0
 var avg_duration = 5
@@ -33,6 +34,10 @@ func handleSet(x, y uint16, r, g, b uint8) {
 	pixels[mem_start+1] = g
 	pixels[mem_start+2] = b
 	pixels[mem_start+3] = 255
+	delta_pixels[mem_start] = r
+	delta_pixels[mem_start+1] = g
+	delta_pixels[mem_start+2] = b
+	delta_pixels[mem_start+3] = 255
 }
 
 func handlePacket(msg string) {
@@ -68,10 +73,12 @@ func udpserver() {
 	}
 }
 
-func sendPixels(conn *websocket.Conn, pix *[]uint8) {
+var allConns []*websocket.Conn
+
+func sendPixels(conn *websocket.Conn, pix []uint8) {
 	var b bytes.Buffer
 	w := gzip.NewWriter(&b)
-	w.Write([]byte(*pix))
+	w.Write([]byte(pix))
 	w.Close()
 	
 	conn.WriteMessage(websocket.BinaryMessage, b.Bytes())
@@ -85,7 +92,8 @@ var wsupgrader = websocket.Upgrader{
 func wshandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := wsupgrader.Upgrade(w, r, nil)
 
-	sendPixels(conn, &pixels)
+	sendPixels(conn, pixels)
+	allConns = append(allConns, conn);
 
 	if err != nil {
 		fmt.Println("Failed to set websocket upgrade: %+v", err)
@@ -121,6 +129,18 @@ func main() {
 	for i := 0; i < width * height * stride ; i+=4 {
 		pixels[i+3] = 255
 	}
+
+	ticker := time.NewTicker(time.Millisecond * 500)
+	go func() {
+		for {
+			<-ticker.C
+			fmt.Printf("sending deltas to %d clients\n", len(allConns));
+			for _,conn := range allConns {
+				sendPixels(conn, delta_pixels);	
+			}
+			delta_pixels = make([]uint8, width*height*stride)
+		}
+	}()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
