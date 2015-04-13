@@ -77,7 +77,7 @@ var allConns []*websocket.Conn
 
 func sendPixels(conn *websocket.Conn, pix []uint8) {
 	var b bytes.Buffer
-	w := gzip.NewWriter(&b)
+	w,_ := gzip.NewWriterLevel(&b, 9)
 	w.Write([]byte(pix))
 	w.Close()
 	
@@ -86,7 +86,7 @@ func sendPixels(conn *websocket.Conn, pix []uint8) {
 
 var wsupgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	WriteBufferSize: 4096,
 }
 
 func wshandler(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +130,7 @@ func main() {
 		pixels[i+3] = 255
 	}
 
-	ticker := time.NewTicker(time.Millisecond * 1000)
+	ticker := time.NewTicker(time.Millisecond * 200)
 	go func() {
 		for {
 			<-ticker.C

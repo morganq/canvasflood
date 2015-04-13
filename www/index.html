@@ -9,29 +9,29 @@
 
 			sock = new WebSocket("ws://54.153.106.51:8080/delta");
 			sock.binaryType='arraybuffer';
-			
+
 			sock.onmessage = function(event) {
+				var t_start = performance.now();
+
+				var outdata = pako.inflate(event.data);
+				var t_inflate = performance.now();
+				
+				var px = new Uint8ClampedArray(outdata);
+				var img = ctx.createImageData(800,600);
+				img.data.set(px, 0);
+				var t_imagedata = performance.now();
+
 				var tempcvs = document.createElement("canvas");
 				tempcvs.width=800; tempcvs.height=600;
 				tempctx = tempcvs.getContext("2d");
-				console.log("received " + event.data.byteLength + " bytes");
-				//console.log(event.data);
-				var outdata = pako.inflate(event.data);
-				//console.log(outdata);
-				
-				var px = new Uint8Array(outdata);
-				//px = event.data;
-				var img = ctx.createImageData(800,600);
-				//img.data = px;
-				for(var i = 0; i < img.data.length; i+=1) {
-					//if(px[i+3] == 0) { continue; }
-					img.data[i] = px[i];
-					//img.data[i+1] = px[i+1];
-					//img.data[i+2] = px[i+2];
-					//img.data[i+3] = px[i+3];
-				}
 				tempctx.putImageData(img, 0,0);
 				ctx.drawImage(tempcvs, 0, 0);
+				var t_blit = performance.now();
+				
+				console.log("Bytes received: " + event.data.byteLength);
+				console.log("Time to inflate: " + (t_inflate - t_start));
+				console.log("Time to build image: " + (t_imagedata - t_inflate));
+				console.log("Time to blit: " + (t_blit - t_imagedata));
 			}
 
 		})
