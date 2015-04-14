@@ -25,6 +25,11 @@ var packets int64 = 0
 var avg_duration = 5
 var last_time = time.Now()
 
+var delta_rect_x1 uint16 = 800
+var delta_rect_y1 uint16 = 600
+var delta_rect_x2 uint16 = 0
+var delta_rect_y2 uint16 = 0
+
 func handleSet(x, y uint16, r, g, b uint8) {
 	if x < 0 || int(x) >= width || y < 0 || int(y) >= height {
 		return
@@ -38,6 +43,10 @@ func handleSet(x, y uint16, r, g, b uint8) {
 	delta_pixels[mem_start+1] = g
 	delta_pixels[mem_start+2] = b
 	delta_pixels[mem_start+3] = 255
+	if x > delta_rect_x2 { delta_rect_x2 = x }
+	if x < delta_rect_x1 { delta_rect_x1 = x }
+	if y > delta_rect_y2 { delta_rect_y2 = y }
+	if y < delta_rect_y1 { delta_rect_y1 = y }
 }
 
 func handlePacket(msg string) {
@@ -68,20 +77,20 @@ func udpserver() {
 		buf := make([]byte, 256)
 		read_len, _, _ := conn.ReadFromUDP(buf)
 		msg := string(buf[0:read_len])
-		//fmt.Println(msg)
 		go handlePacket(msg)
 	}
 }
 
 var allConns []*websocket.Conn
 
-func sendPixels(conn *websocket.Conn, pix []uint8) {
+func getCompressedPixels(pix []uint8) []byte {
 	var b bytes.Buffer
 	w,_ := gzip.NewWriterLevel(&b, 9)
 	w.Write([]byte(pix))
+	w.Flush()
 	w.Close()
 	
-	conn.WriteMessage(websocket.BinaryMessage, b.Bytes())
+	return b.Bytes()
 }
 
 var wsupgrader = websocket.Upgrader{
@@ -92,7 +101,6 @@ var wsupgrader = websocket.Upgrader{
 func wshandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := wsupgrader.Upgrade(w, r, nil)
 
-	sendPixels(conn, pixels)
 	allConns = append(allConns, conn);
 
 	if err != nil {
@@ -132,13 +140,25 @@ func main() {
 
 	ticker := time.NewTicker(time.Millisecond * 200)
 	go func() {
+		tickIndex := 0
 		for {
 			<-ticker.C
 			fmt.Printf("sending deltas to %d clients\n", len(allConns));
+			var bytesToSend []byte
+			if tickIndex % 20 == 0 {
+				bytesToSend = getCompressedPixels(pixels)
+			} else {
+				bytesToSend = getCompressedPixels(delta_pixels)
+			}
 			for _,conn := range allConns {
-				sendPixels(conn, delta_pixels);	
+				conn.WriteMessage(websocket.BinaryMessage, bytesToSend)
 			}
 			delta_pixels = make([]uint8, width*height*stride)
+			delta_rect_x1 = 800
+			delta_rect_x2 = 0
+			delta_rect_y1 = 600
+			delta_rect_y2 = 0
+			tickIndex++
 		}
 	}()
 
