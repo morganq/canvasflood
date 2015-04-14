@@ -84,9 +84,11 @@ func udpserver() {
 var allConns []*websocket.Conn
 
 func getCompressedPixels(pix []uint8) []byte {
+	pix_saved := make([]uint8, width*height*stride)
+	copy(pix_saved, pix)
 	var b bytes.Buffer
 	w,_ := gzip.NewWriterLevel(&b, 9)
-	w.Write([]byte(pix))
+	w.Write([]byte(pix_saved))
 	w.Flush()
 	w.Close()
 	
