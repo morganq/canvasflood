@@ -12,6 +12,7 @@ import (
 	"time"
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 )
 
 var width int = 800
@@ -25,10 +26,10 @@ var packets int64 = 0
 var avg_duration = 5
 var last_time = time.Now()
 
-var delta_rect_x1 uint16 = 800
-var delta_rect_y1 uint16 = 600
-var delta_rect_x2 uint16 = 0
-var delta_rect_y2 uint16 = 0
+var delta_rect_x1 int = 800
+var delta_rect_y1 int = 600
+var delta_rect_x2 int = 0
+var delta_rect_y2 int = 0
 
 func handleSet(x, y uint16, r, g, b uint8) {
 	if x < 0 || int(x) >= width || y < 0 || int(y) >= height {
@@ -43,10 +44,10 @@ func handleSet(x, y uint16, r, g, b uint8) {
 	delta_pixels[mem_start+1] = g
 	delta_pixels[mem_start+2] = b
 	delta_pixels[mem_start+3] = 255
-	if x > delta_rect_x2 { delta_rect_x2 = x }
-	if x < delta_rect_x1 { delta_rect_x1 = x }
-	if y > delta_rect_y2 { delta_rect_y2 = y }
-	if y < delta_rect_y1 { delta_rect_y1 = y }
+	if int(x) > delta_rect_x2 { delta_rect_x2 = int(x) }
+	if int(x) < delta_rect_x1 { delta_rect_x1 = int(x) }
+	if int(y) > delta_rect_y2 { delta_rect_y2 = int(y) }
+	if int(y) < delta_rect_y1 { delta_rect_y1 = int(y) }
 }
 
 func handlePacket(msg string) {
@@ -83,14 +84,68 @@ func udpserver() {
 
 var allConns []*websocket.Conn
 
-func getCompressedPixels(pix []uint8) []byte {
+func getCompressedPixels() []byte {
 	pix_saved := make([]uint8, width*height*stride)
-	copy(pix_saved, pix)
+	copy(pix_saved, pixels)
 	var b bytes.Buffer
 	w,_ := gzip.NewWriterLevel(&b, 9)
+	x1 := make([]byte, 2)
+	y1 := make([]byte, 2)
+	x2 := make([]byte, 2)
+	y2 := make([]byte, 2)
+	
+	binary.LittleEndian.PutUint16(x1, uint16(0))
+	binary.LittleEndian.PutUint16(y1, uint16(0))
+	binary.LittleEndian.PutUint16(x2, uint16(width))
+	binary.LittleEndian.PutUint16(y2, uint16(height))
+
+	w.Write(x1)
+	w.Write(y1)
+	w.Write(x2)
+	w.Write(y2)
+
 	w.Write([]byte(pix_saved))
 	w.Flush()
 	w.Close()
+	
+	return b.Bytes()
+}
+
+func getDeltaCompressedPixels() []byte {
+	w := delta_rect_x2 - delta_rect_x1
+	h := delta_rect_y2 - delta_rect_y1
+	if w < 1 || h < 1 {
+		return nil
+	}
+	fmt.Printf("%d pixels to send (%dx%d)\n", w*h,w,h)
+	pix_box := make([]uint8, w*h*stride)
+	for y := 0; y < h; y++ {
+		n_m := y * w * stride
+		n_total := w * stride
+		o_m := (delta_rect_y1 + y) * width * stride + delta_rect_x1 * stride
+		row := delta_pixels[o_m:o_m+n_total]
+		copy(pix_box[n_m:], row)
+	}
+	var b bytes.Buffer
+	wr,_ := gzip.NewWriterLevel(&b, 9)
+
+	x1 := make([]byte, 2)
+	y1 := make([]byte, 2)
+	x2 := make([]byte, 2)
+	y2 := make([]byte, 2)
+	
+	binary.LittleEndian.PutUint16(x1, uint16(delta_rect_x1))
+	binary.LittleEndian.PutUint16(y1, uint16(delta_rect_y1))
+	binary.LittleEndian.PutUint16(x2, uint16(w))
+	binary.LittleEndian.PutUint16(y2, uint16(h))
+
+	wr.Write(x1)
+	wr.Write(y1)
+	wr.Write(x2)
+	wr.Write(y2)
+	wr.Write([]byte(pix_box))
+	wr.Flush()
+	wr.Close()
 	
 	return b.Bytes()
 }
@@ -148,18 +203,22 @@ func main() {
 			fmt.Printf("sending deltas to %d clients\n", len(allConns));
 			var bytesToSend []byte
 			if tickIndex % 20 == 0 {
-				bytesToSend = getCompressedPixels(pixels)
+				bytesToSend = getCompressedPixels()
 			} else {
-				bytesToSend = getCompressedPixels(delta_pixels)
+				bytesToSend = getDeltaCompressedPixels()
 			}
-			for _,conn := range allConns {
-				conn.WriteMessage(websocket.BinaryMessage, bytesToSend)
-			}
+
 			delta_pixels = make([]uint8, width*height*stride)
 			delta_rect_x1 = 800
 			delta_rect_x2 = 0
 			delta_rect_y1 = 600
 			delta_rect_y2 = 0
+
+			if bytesToSend != nil {
+				for _,conn := range allConns {
+					conn.WriteMessage(websocket.BinaryMessage, bytesToSend)
+				}
+			}
 			tickIndex++
 		}
 	}()

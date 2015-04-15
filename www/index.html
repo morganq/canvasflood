@@ -13,7 +13,7 @@
 			sock.binaryType='arraybuffer';
 
 			sock.onmessage = function(event) {
-				if(locking) { console.log("skipping delta, ran out of time!"); return; }
+				//if(locking) { console.log("skipping delta, ran out of time!"); return; }
 				locking = true;
 				var t_start = performance.now();
 
@@ -27,16 +27,23 @@
 				}
 				var t_inflate = performance.now();
 				
-				var px = new Uint8ClampedArray(outdata);
-				var img = ctx.createImageData(800,600);
+				var px_plus_pos = new Uint8ClampedArray(outdata);
+
+				var x1 = px_plus_pos[0] + (px_plus_pos[1] << 8);
+				var y1 = px_plus_pos[2] + (px_plus_pos[3] << 8);
+				var w = px_plus_pos[4] + (px_plus_pos[5] << 8);
+				var h = px_plus_pos[6] + (px_plus_pos[7] << 8);
+
+				var px = px_plus_pos.subarray(8);
+				var img = ctx.createImageData(w,h);
 				img.data.set(px, 0);
 				var t_imagedata = performance.now();
 
 				var tempcvs = document.createElement("canvas");
-				tempcvs.width=800; tempcvs.height=600;
+				tempcvs.width=w; tempcvs.height=h;
 				tempctx = tempcvs.getContext("2d");
 				tempctx.putImageData(img, 0,0);
-				ctx.drawImage(tempcvs, 0, 0);
+				ctx.drawImage(tempcvs, x1, y1);
 				var t_blit = performance.now();
 				
 				var str = "";
